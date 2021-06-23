@@ -61,7 +61,7 @@ export function CarCard({ car }: CarCardProps) {
                             </IconButton>
                         }
                         title={car.make + ' ' + car.model}
-                        subheader={`£${car.price}`}
+                        subheader={`$${car.price}`}
                     />
                     <CardMedia
                         className={classes.media}
