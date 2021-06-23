@@ -2,29 +2,31 @@ import { Button, FormControl, Grid, InputLabel, MenuItem, Paper, Select, SelectP
 import { Field, Form, Formik, useField, useFormikContext } from 'formik';
 import { GetServerSideProps } from 'next';
 import router, { useRouter } from 'next/router';
+import { useEffect, useState } from 'react';
 import useSWR from 'swr';
 import { getMakes, Make } from '../database/getMakes';
 import { getModels, Model } from '../database/getModels';
 import { getAsString } from '../getAsString';
 
-export interface HomeProps {
+export interface SearchProps {
     makes: Make[];
     models: Model[];
+    singleColumn?: boolean;
 }
-
 
 
 const prices = [500, 1000, 5000, 15000, 25000, 50000, 250000];
 
-export default function Home({ makes, models }: HomeProps) {
+export default function Search({ makes, models, singleColumn }: SearchProps) {
     const { query } = useRouter();
+    const smValue = singleColumn ? 12 : 6;
 
-    const initialValues = {
+    const [initialValues] = useState({
         make: getAsString(query.make) || 'all',
         model: getAsString(query.model) || 'all',
         minPrice: getAsString(query.minPrice) || 'all',
         maxPrice: getAsString(query.maxPrice) || 'all',
-    };
+    });
 
     return (
         <Formik
@@ -32,7 +34,7 @@ export default function Home({ makes, models }: HomeProps) {
             onSubmit={(values) => {
                 router.push(
                     {
-                        pathname: '/',
+                        pathname: '/cars',
                         query: { ...values, page: 1 },
                     },
                     undefined,
@@ -44,7 +46,7 @@ export default function Home({ makes, models }: HomeProps) {
                 <Form>
                     <Paper elevation={5} style={{ margin: 'auto', maxWidth: 500, padding: 50 }}>
                         <Grid container spacing={3}>
-                            <Grid item xs={12} sm={6}>
+                            <Grid item xs={12} sm={smValue}>
                                 <FormControl fullWidth variant="outlined">
                                     <InputLabel id="search-make">Make</InputLabel>
                                     <Field
@@ -64,10 +66,10 @@ export default function Home({ makes, models }: HomeProps) {
                                     </Field>
                                 </FormControl>
                             </Grid>
-                            <Grid item xs={12} sm={6}>
-                                <ModelSelect make={values.make} name="model" models={models} />
+                            <Grid item xs={12} sm={smValue}>
+                                <ModelSelect initialMake={initialValues.make} make={values.make} name="model" models={models} />
                             </Grid>
-                            <Grid item xs={12} sm={6}>
+                            <Grid item xs={12} sm={smValue}>
                                 <FormControl fullWidth variant="outlined">
                                     <InputLabel id="search-min-price">Min Price</InputLabel>
                                     <Field
@@ -87,7 +89,7 @@ export default function Home({ makes, models }: HomeProps) {
                                     </Field>
                                 </FormControl>
                             </Grid>
-                            <Grid item xs={12} sm={6}>
+                            <Grid item xs={12} sm={smValue}>
                                 <FormControl fullWidth variant="outlined">
                                     <InputLabel id="search-max-price">Max Price</InputLabel>
                                     <Field
@@ -130,22 +132,27 @@ export interface ModelSelectProps extends SelectProps {
     name: string;
     models: Model[];
     make: string;
+    initialMake: string;
 }
 
-export function ModelSelect({ models, make, ...props }: ModelSelectProps) {
+export function ModelSelect({ initialMake, models, make, ...props }: ModelSelectProps) {
     const { setFieldValue } = useFormikContext();
     const [field] = useField({
-        name: props.name,
+        name: props.name
     });
 
-    const { data } = useSWR<Model[]>('/api/models?make=' + make, {
-        onSuccess: (newValues) => {
-            if (!newValues.map((a) => a.model).includes(field.value)) {
-                setFieldValue('model', 'all');
-            }
-        },
+    const initialModelsOrUndefined = make === initialMake ? models : undefined;
+
+    const { data: newModels } = useSWR<Model[]>('/api/models?make=' + make, {
+        dedupingInterval: 60000,
+        initialData: make === 'all' ? [] : initialModelsOrUndefined
     });
-    const newModels = data || models;
+
+    useEffect(() => {
+        if (!newModels?.map((a) => a.model).includes(field.value)) {
+            setFieldValue('model', 'all');
+        }
+    }, [make, newModels]);
 
     return (
         <FormControl fullWidth variant="outlined">
@@ -160,7 +167,7 @@ export function ModelSelect({ models, make, ...props }: ModelSelectProps) {
                 <MenuItem value="all">
                     <em>All Models</em>
                 </MenuItem>
-                {newModels.map((model) => (
+                {newModels?.map((model) => (
                     <MenuItem key={model.model} value={model.model}>
                         {`${model.model} (${model.count})`}
                     </MenuItem>
@@ -170,7 +177,9 @@ export function ModelSelect({ models, make, ...props }: ModelSelectProps) {
     );
 }
 
-export const getServerSideProps: GetServerSideProps = async (ctx) => {
+export const getServerSideProps: GetServerSideProps<SearchProps> = async (
+    ctx
+) => {
     const make = getAsString(ctx.query.make);
 
     const [makes, models] = await Promise.all([getMakes(), getModels(make)]);
